@@ -3,14 +3,41 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-# Generate dummy data
-np.random.seed(42)
-x = np.random.uniform(10, 50, 100)  # Avg Open PA Territory (x-axis)
-y = np.random.uniform(0.5, 3.5, 100)  # Market Share Claims for Sotyktu (y-axis)
+# Streamlit UI
+st.title("Marketshare for Sotyktu vs Access Quadrants")
+
+# File uploader for user-provided dataset
+st.sidebar.header("Upload Your Data File")
+uploaded_file = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
+
+if uploaded_file is not None:
+    # Load user data
+    data = pd.read_csv(uploaded_file)
+    st.sidebar.success("File uploaded successfully!")
+    
+    # Ensure required columns exist
+    required_columns = ["Avg_Open_PA_Terr", "Market_Share_Claims"]
+    if all(col in data.columns for col in required_columns):
+        x = data["Avg_Open_PA_Terr"]
+        y = data["Market_Share_Claims"]
+    else:
+        st.sidebar.error("Uploaded file must contain 'Avg_Open_PA_Terr' and 'Market_Share_Claims' columns.")
+        st.stop()
+else:
+    # Generate dummy data if no file is uploaded
+    np.random.seed(42)
+    x = np.random.uniform(10, 50, 100)  # Avg Open PA Territory (x-axis)
+    y = np.random.uniform(0.5, 3.5, 100)  # Market Share Claims for Sotyktu (y-axis)
+    data = pd.DataFrame({"Avg_Open_PA_Terr": x, "Market_Share_Claims": y})
 
 # Define default quadrant thresholds
 x_threshold_default = 20  # National Avg Access
 y_threshold_default = 1.75  # National Market Share Claims
+
+# Sidebar for user input
+st.sidebar.header("Adjust Quadrant Thresholds")
+x_threshold = st.sidebar.slider("National Avg Access", min_value=int(min(x)), max_value=int(max(x)), value=x_threshold_default)
+y_threshold = st.sidebar.slider("National Market Share Claims", min_value=float(min(y)), max_value=float(max(y)), value=y_threshold_default)
 
 # Categorize data points based on quadrants
 def categorize_data(x, y, x_threshold, y_threshold):
@@ -26,23 +53,9 @@ def categorize_data(x, y, x_threshold, y_threshold):
             categories.append('Marketshare ↓ Access ↓')
     return categories
 
-# Streamlit UI
-st.title("Marketshare for Sotyktu vs Access Quadrants")
-
-# Sidebar for user input
-st.sidebar.header("Adjust Quadrant Thresholds")
-x_threshold = st.sidebar.slider("National Avg Access", min_value=10, max_value=50, value=x_threshold_default)
-y_threshold = st.sidebar.slider("National Market Share Claims", min_value=0.5, max_value=3.5, value=y_threshold_default)
-
 # Update categories based on user input
 categories = categorize_data(x, y, x_threshold, y_threshold)
-
-# Create DataFrame
-data = pd.DataFrame({
-    "Avg_Open_PA_Terr": x,
-    "Market_Share_Claims": y,
-    "Category": categories
-})
+data["Category"] = categories
 
 # Create sleek interactive scatter plot
 fig = px.scatter(data, x="Avg_Open_PA_Terr", y="Market_Share_Claims", color="Category", 
