@@ -44,33 +44,33 @@ data = pd.DataFrame({
     "Category": categories
 })
 
-# Create interactive scatter plot
+# Create sleek interactive scatter plot
 fig = px.scatter(data, x="Avg_Open_PA_Terr", y="Market_Share_Claims", color="Category", 
                  title="Marketshare for Sotyktu vs Access Quadrants", 
                  labels={"Avg_Open_PA_Terr": "Avg Open PA Territory", "Market_Share_Claims": "Market Share Claims for Sotyktu"},
-                 hover_data=["Avg_Open_PA_Terr", "Market_Share_Claims", "Category"])
+                 hover_data=["Avg_Open_PA_Terr", "Market_Share_Claims", "Category"],
+                 template="plotly_white")
 
-# Add quadrant lines
-fig.add_vline(x=x_threshold, line=dict(color="red", width=2, dash="dash"))
-fig.add_hline(y=y_threshold, line=dict(color="red", width=2, dash="dash"))
+# Remove bubble-like appearance, set minimal sleek markers
+fig.update_traces(marker=dict(size=8, opacity=0.85, line=dict(width=0.8, color='black')))
 
-# Enhance the plot with additional interactive features
-fig.update_traces(marker=dict(size=10, opacity=0.8, line=dict(width=1, color='DarkSlateGrey')))
-fig.update_layout(hovermode="closest", template="plotly_dark")
+# Add quadrant lines with sleek style
+fig.add_vline(x=x_threshold, line=dict(color="red", width=2, dash="dot"))
+fig.add_hline(y=y_threshold, line=dict(color="red", width=2, dash="dot"))
 
-# Add annotation for quadrants
-fig.add_annotation(x=x_threshold + 5, y=y_threshold + 0.2,
-                   text="High Marketshare & High Access",
-                   showarrow=False, font=dict(size=12, color="white"))
-fig.add_annotation(x=x_threshold + 5, y=y_threshold - 0.5,
-                   text="Low Marketshare & High Access",
-                   showarrow=False, font=dict(size=12, color="white"))
-fig.add_annotation(x=x_threshold - 8, y=y_threshold + 0.2,
-                   text="High Marketshare & Low Access",
-                   showarrow=False, font=dict(size=12, color="white"))
-fig.add_annotation(x=x_threshold - 8, y=y_threshold - 0.5,
-                   text="Low Marketshare & Low Access",
-                   showarrow=False, font=dict(size=12, color="white"))
+# Refine quadrant annotations with better alignment
+fig.add_annotation(x=x_threshold + 10, y=y_threshold + 0.5,
+                   text="⬆ High Marketshare & High Access",
+                   showarrow=False, font=dict(size=12, color="black"))
+fig.add_annotation(x=x_threshold + 10, y=y_threshold - 0.5,
+                   text="⬇ Low Marketshare & High Access",
+                   showarrow=False, font=dict(size=12, color="black"))
+fig.add_annotation(x=x_threshold - 10, y=y_threshold + 0.5,
+                   text="⬆ High Marketshare & Low Access",
+                   showarrow=False, font=dict(size=12, color="black"))
+fig.add_annotation(x=x_threshold - 10, y=y_threshold - 0.5,
+                   text="⬇ Low Marketshare & Low Access",
+                   showarrow=False, font=dict(size=12, color="black"))
 
 # Show figure
 st.plotly_chart(fig)
@@ -79,8 +79,8 @@ st.plotly_chart(fig)
 st.sidebar.header("Download Data")
 st.sidebar.download_button("Download Data as CSV", data.to_csv(index=False).encode('utf-8'), "marketshare_data.csv", "text/csv")
 
-# Display key insights
+# Display key insights with modern styling
 st.subheader("Key Insights")
-st.write("✅ Areas with high market share but low access indicate potential opportunities for improved access strategies.")
-st.write("✅ Quadrants help identify which territories may require targeted efforts for market penetration.")
-st.write("✅ Interactive controls allow real-time analysis and refinement of strategic insights.")
+st.markdown("✅ **High market share but low access** indicates potential for improved access strategies.")
+st.markdown("✅ **Quadrant segmentation** helps pinpoint regions requiring targeted efforts for growth.")
+st.markdown("✅ **Dynamic controls** allow real-time data-driven strategic analysis.")
