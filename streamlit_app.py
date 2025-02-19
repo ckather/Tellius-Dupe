@@ -1,14 +1,34 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import openai
 import plotly.express as px
+import tiktoken
+from typing import List
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Set page config for a modern wide layout
-st.set_page_config(page_title="DrugX Market Share & Access Quadrants", layout="wide")
+# -----------------------------
+# 1. SETUP
+# -----------------------------
+# Replace with your actual OpenAI API key (or store in st.secrets for security)
+openai.api_key = "YOUR_OPENAI_API_KEY"
 
-st.markdown("## DrugX Market Share & Access Quadrants")
+# Streamlit config
+st.set_page_config(page_title="NLP-Based Search Demo", layout="wide")
+st.title("DrugX Market Share & Access Quadrants (NLP Search)")
 
-# --- Helper function to load data from CSV or Excel ---
+# A small utility function to get embeddings from OpenAI
+@st.cache_data
+def get_openai_embeddings(texts: List[str], model_name: str = "text-embedding-ada-002") -> np.ndarray:
+    """
+    Takes a list of text strings and returns a numpy array of shape (len(texts), embedding_dim).
+    """
+    # Note: For large lists, you should batch requests to avoid rate limits
+    response = openai.Embedding.create(input=texts, model=model_name)
+    embeddings = [r["embedding"] for r in response["data"]]
+    return np.array(embeddings)
+
+# A function to load CSV or Excel
 @st.cache_data
 def load_data(file):
     file_name = file.name.lower()
@@ -18,156 +38,119 @@ def load_data(file):
         return pd.read_excel(file)
     else:
         st.error("Unsupported file type. Please upload a CSV or Excel file.")
-        return pd.DataFrame()  # Return empty DataFrame on error
+        return pd.DataFrame()
 
-# --- Sidebar: File uploader and variable selection ---
+# -----------------------------
+# 2. DATA LOADING
+# -----------------------------
 st.sidebar.header("Upload Your Data File")
 uploaded_file = st.sidebar.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx", "xls"])
 
-if uploaded_file is not None:
+if uploaded_file:
     data = load_data(uploaded_file)
-    if not data.empty:
-        st.sidebar.success("File uploaded successfully!")
-        
-        st.sidebar.header("Select Variables for Chart")
-        x_var = st.sidebar.selectbox("Select X-axis Variable", data.columns, index=0)
-        y_var = st.sidebar.selectbox("Select Y-axis Variable", data.columns, index=1)
-        
-        if x_var and y_var:
-            x = data[x_var]
-            y = data[y_var]
-        else:
-            st.sidebar.error("Please select valid variables for both axes.")
-            st.stop()
-    else:
+    if data.empty:
         st.stop()
 else:
-    # Generate dummy data if no file is uploaded
+    # Fallback to dummy data
     np.random.seed(42)
     x = np.random.uniform(10, 50, 100)
     y = np.random.uniform(0.5, 3.5, 100)
     data = pd.DataFrame({"X_Value": x, "Y_Value": y})
-    x_var = "X_Value"
-    y_var = "Y_Value"
 
-# Compute min, max, and default thresholds
-x_min, x_max = float(x.min()), float(x.max())
-y_min, y_max = float(y.min()), float(y.max())
-x_threshold_default = float(x.mean())
-y_threshold_default = float(y.mean())
+# Force data to string columns for embedding
+# (In practice, you'd combine numeric fields into textual descriptions or handle them separately.)
+string_data = data.astype(str)
+row_texts = string_data.apply(lambda row: " | ".join(row.values), axis=1).tolist()
 
-# --- Sidebar: Adjust quadrant thresholds ---
-st.sidebar.header("Adjust Quadrant Thresholds")
-x_threshold = st.sidebar.slider("X-axis Threshold", min_value=x_min, max_value=x_max, value=x_threshold_default)
-y_threshold = st.sidebar.slider("Y-axis Threshold", min_value=y_min, max_value=y_max, value=y_threshold_default)
+# -----------------------------
+# 3. EMBEDDINGS
+# -----------------------------
+st.sidebar.write("Generating embeddings for the dataset (one-time). Please wait...")
+dataset_embeddings = get_openai_embeddings(row_texts)
+embedding_dim = dataset_embeddings.shape[1]
+st.sidebar.success("Embeddings generated successfully!")
 
-# --- Categorize data points into quadrants (optimized with numpy.select) ---
-conditions = [
-    (x >= x_threshold) & (y >= y_threshold),
-    (x >= x_threshold) & (y < y_threshold),
-    (x < x_threshold) & (y >= y_threshold),
-    (x < x_threshold) & (y < y_threshold)
-]
-choices = [
-    'High Marketshare & High Access', 
-    'Low Marketshare & High Access', 
-    'High Marketshare & Low Access', 
-    'Low Marketshare & Low Access'
-]
-data["Category"] = np.select(conditions, choices, default="Unknown")
+# -----------------------------
+# 4. USER INPUT & SEMANTIC SEARCH
+# -----------------------------
+st.subheader("NLP-Based Search")
 
-# --- Search functionality ---
-def search_data(query: str, df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Returns rows where ANY cell contains the query (case-insensitive).
-    """
-    if not query:
-        return df
-    # Convert all columns to string and search
-    mask = df.astype(str).apply(lambda col: col.str.contains(query, case=False, na=False))
-    return df[mask.any(axis=1)]
+user_query = st.text_input("Ask a question or type a keyword:")
+if user_query:
+    # Get embedding for the user's query
+    query_embedding = get_openai_embeddings([user_query])  # shape (1, embedding_dim)
 
-st.markdown("### Search & AI Insights")
+    # Compute cosine similarities between the query and each row
+    similarities = cosine_similarity(query_embedding, dataset_embeddings)  # shape (1, num_rows)
+    similarities = similarities.flatten()  # shape (num_rows,)
 
-search_term = st.text_input(
-    "Enter a keyword or number to filter the data:",
-    help="Type something and press Enter to search the dataset."
-)
+    # Sort rows by similarity (descending)
+    top_n = 10  # number of results to show
+    top_indices = np.argsort(similarities)[::-1][:top_n]
+    
+    # Prepare results
+    search_results = data.iloc[top_indices].copy()
+    search_results["Similarity"] = similarities[top_indices]
 
-search_results = search_data(search_term, data) if search_term else pd.DataFrame()
+    st.markdown(f"**Top {top_n} semantic matches** for your query:")
+    st.dataframe(search_results)
 
-if search_term:
-    st.write(f"#### Search Results for '{search_term}':")
-    if search_results.empty:
-        st.warning("No matching results found. Try a different search term.")
+    # Optional: Basic AI "insights" based on similarity scores
+    avg_score = np.mean(similarities[top_indices])
+    if avg_score > 0.85:
+        st.write("**AI Insight**: The query is strongly represented in the dataset. High average similarity suggests a clear match.")
+    elif avg_score > 0.65:
+        st.write("**AI Insight**: The query partially matches multiple rows. Moderate similarity suggests the concept is somewhat present.")
     else:
-        st.success(f"We found {len(search_results)} matching rows in the dataset.")
-        # Display search results in a styled dataframe
-        st.dataframe(search_results.style.highlight_max(axis=0))
-        
-        # AI insights based on number of matches
-        st.markdown("### AI-Generated Insights:")
-        if len(search_results) > 10:
-            st.write("📊 The term appears frequently, indicating a strong trend in this data segment.")
-        elif len(search_results) > 5:
-            st.write("📈 Moderate occurrence, possibly indicating a growing trend.")
-        else:
-            st.write("🔎 The term appears infrequently, which could indicate an emerging opportunity or niche area.")
+        st.write("**AI Insight**: The query does not strongly match the dataset. Results may be loosely related.")
 
-# --- Create interactive scatter plot with Plotly Express ---
-fig = px.scatter(
-    data, 
-    x=x_var, 
-    y=y_var, 
-    color="Category", 
-    title="DrugX Market Share & Access Quadrants", 
-    labels={x_var: x_var, y_var: y_var},
-    hover_data=[x_var, y_var, "Category"],
-    template="plotly_white"
-)
+# -----------------------------
+# 5. QUADRANT LOGIC (OPTIONAL)
+# -----------------------------
+# Example: We'll assume the first two columns are X and Y for quadrant logic
+# If you have actual variable selection, replicate that from your existing code
+if len(data.columns) >= 2:
+    x_var, y_var = data.columns[0], data.columns[1]
+    x = data[x_var]
+    y = data[y_var]
+    
+    # Basic quadrant thresholds
+    x_threshold = x.mean()
+    y_threshold = y.mean()
 
-# Update marker style for sleek appearance
-fig.update_traces(marker=dict(size=8, opacity=0.85, line=dict(width=0.8, color='black')))
+    # Quadrant categories
+    conditions = [
+        (x >= x_threshold) & (y >= y_threshold),
+        (x >= x_threshold) & (y < y_threshold),
+        (x < x_threshold) & (y >= y_threshold),
+        (x < x_threshold) & (y < y_threshold)
+    ]
+    choices = [
+        'High Marketshare & High Access', 
+        'Low Marketshare & High Access', 
+        'High Marketshare & Low Access', 
+        'Low Marketshare & Low Access'
+    ]
+    data["Category"] = np.select(conditions, choices, default="Unknown")
 
-# Add quadrant lines
-fig.add_vline(x=x_threshold, line=dict(color="red", width=2, dash="dot"))
-fig.add_hline(y=y_threshold, line=dict(color="red", width=2, dash="dot"))
+    fig = px.scatter(
+        data, 
+        x=x_var, 
+        y=y_var, 
+        color="Category", 
+        title="DrugX Market Share & Access Quadrants", 
+        hover_data=data.columns,
+        template="plotly_white"
+    )
 
-# Calculate ranges for annotation positioning
-x_range = x_max - x_min
-y_range = y_max - y_min
+    # Add quadrant lines
+    fig.add_vline(x=x_threshold, line=dict(color="red", width=2, dash="dot"))
+    fig.add_hline(y=y_threshold, line=dict(color="red", width=2, dash="dot"))
 
-# Add quadrant annotations
-fig.add_annotation(
-    x=x_threshold + 0.1 * x_range, y=y_threshold + 0.1 * y_range,
-    text="⬆ High Marketshare & High Access",
-    showarrow=False, font=dict(size=12, color="black")
-)
-fig.add_annotation(
-    x=x_threshold + 0.1 * x_range, y=y_threshold - 0.1 * y_range,
-    text="⬇ Low Marketshare & High Access",
-    showarrow=False, font=dict(size=12, color="black")
-)
-fig.add_annotation(
-    x=x_threshold - 0.1 * x_range, y=y_threshold + 0.1 * y_range,
-    text="⬆ High Marketshare & Low Access",
-    showarrow=False, font=dict(size=12, color="black")
-)
-fig.add_annotation(
-    x=x_threshold - 0.1 * x_range, y=y_threshold - 0.1 * y_range,
-    text="⬇ Low Marketshare & Low Access",
-    showarrow=False, font=dict(size=12, color="black")
-)
+    st.plotly_chart(fig, use_container_width=True)
 
-st.plotly_chart(fig, use_container_width=True)
-
-# --- Sidebar: Download data button ---
-st.sidebar.header("Download Data")
+# -----------------------------
+# 6. DOWNLOAD BUTTON
+# -----------------------------
 csv_data = data.to_csv(index=False).encode('utf-8')
 st.sidebar.download_button("Download Data as CSV", csv_data, "marketshare_data.csv", "text/csv")
-
-# --- Display key insights with modern styling ---
-st.subheader("Key Insights")
-st.markdown("✅ **High market share but low access** indicates potential for improved access strategies.")
-st.markdown("✅ **Quadrant segmentation** helps pinpoint regions requiring targeted efforts for growth.")
-st.markdown("✅ **Dynamic controls** allow real-time data-driven strategic analysis.")
