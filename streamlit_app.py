@@ -2,11 +2,11 @@ import streamlit as st
 import sys
 import subprocess
 
-# ------------------------------------------------------------------------------
-# 1) ATTEMPT TO INSTALL MISSING PACKAGES (HACKY, BUT SINGLE-FILE FRIENDLY)
-# ------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 1) FORCE-INSTALL SPECIFIC VERSIONS (PINNED OPENAI==0.28.0)
+# -------------------------------------------------------------------
 REQUIRED_PACKAGES = [
-    "openai",
+    "openai==0.28.0",      # Pin to old version that supports openai.Embedding.create()
     "pandas",
     "numpy",
     "plotly",
@@ -15,36 +15,31 @@ REQUIRED_PACKAGES = [
 ]
 
 for pkg in REQUIRED_PACKAGES:
-    try:
-        __import__(pkg)
-    except ImportError:
-        subprocess.run([sys.executable, "-m", "pip", "install", pkg])
+    subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "--force-reinstall", pkg])
 
-# ------------------------------------------------------------------------------
-# 2) IMPORT PACKAGES AFTER INSTALL
-# ------------------------------------------------------------------------------
+# Now import after forced install
 import openai
 import pandas as pd
 import numpy as np
 import plotly.express as px
 from sklearn.metrics.pairwise import cosine_similarity
 
-# ------------------------------------------------------------------------------
-# 3) OPENAI API KEY CONFIG
-# ------------------------------------------------------------------------------
-# Option A: Hard-code your key here (NOT recommended for production):
+# -------------------------------------------------------------------
+# 2) OPENAI API KEY CONFIG
+# -------------------------------------------------------------------
+# Option A: Hard-code your key (NOT recommended)
 openai.api_key = "YOUR_OPENAI_API_KEY"
 
 # Option B: Use Streamlit Secrets (recommended):
-# 1. In Streamlit Cloud, go to "Settings" -> "Secrets".
+# 1. In Streamlit Cloud, go to "Manage app" -> "Secrets".
 # 2. Add a secret named OPENAI_API_KEY.
-# 3. Uncomment the line below:
+# 3. Uncomment this line:
 # openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-# ------------------------------------------------------------------------------
-# 4) STREAMLIT APP
-# ------------------------------------------------------------------------------
-st.set_page_config(page_title="NLP Quadrant App", layout="wide")
+# -------------------------------------------------------------------
+# 3) STREAMLIT APP SETUP
+# -------------------------------------------------------------------
+st.set_page_config(page_title="NLP Quadrant App (Pinned openai==0.28.0)", layout="wide")
 st.title("DrugX Market Share & Access Quadrants (NLP Search)")
 
 @st.cache_data
@@ -56,15 +51,16 @@ def load_data(file):
     elif file_name.endswith(".xlsx") or file_name.endswith(".xls"):
         return pd.read_excel(file)
     else:
-        st.error("Unsupported file type. Please upload a CSV or Excel file.")
+        st.error("Unsupported file type. Please upload a CSV or Excel.")
         return pd.DataFrame()
 
 @st.cache_data
 def get_openai_embeddings(texts, model_name="text-embedding-ada-002"):
     """
-    Create embeddings for a list of strings using OpenAI.
+    Create embeddings for a list of strings using openai==0.28.0 style.
     Returns a numpy array of shape (len(texts), embedding_dim).
     """
+    # For large lists, you may want to batch requests
     response = openai.Embedding.create(input=texts, model=model_name)
     embeddings = [item["embedding"] for item in response["data"]]
     return np.array(embeddings)
@@ -91,9 +87,9 @@ def generate_quadrant_categories(df, x_col, y_col, x_threshold, y_threshold):
     df["Category"] = np.select(conditions, choices, default="Unknown")
     return df
 
-# ------------------------------------------------------------------------------
-# 5) SIDEBAR & DATA LOADING
-# ------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 4) SIDEBAR & DATA LOADING
+# -------------------------------------------------------------------
 st.sidebar.title("Upload Your Data")
 uploaded_file = st.sidebar.file_uploader("CSV or Excel", type=["csv", "xlsx", "xls"])
 
@@ -108,18 +104,19 @@ else:
     dummy_y = np.random.uniform(0.5, 3.5, 100)
     data = pd.DataFrame({"X_Value": dummy_x, "Y_Value": dummy_y})
 
-# ------------------------------------------------------------------------------
-# 6) EMBEDDINGS GENERATION
-# ------------------------------------------------------------------------------
-st.sidebar.write("Generating embeddings... (one-time)")
+# -------------------------------------------------------------------
+# 5) EMBEDDINGS GENERATION
+# -------------------------------------------------------------------
+st.sidebar.write("Generating embeddings... (one-time, pinned openai==0.28.0)")
 string_data = data.astype(str)
 row_texts = string_data.apply(lambda row: " | ".join(row.values), axis=1).tolist()
+
 dataset_embeddings = get_openai_embeddings(row_texts)
 st.sidebar.success("Embeddings generated!")
 
-# ------------------------------------------------------------------------------
-# 7) NLP-BASED SEARCH
-# ------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 6) NLP-BASED SEARCH
+# -------------------------------------------------------------------
 st.subheader("NLP-Based Search")
 
 user_query = st.text_input("Ask a question or type a keyword:")
@@ -144,9 +141,9 @@ if user_query:
     else:
         st.info("AI Insight: Weak match. The dataset doesn't strongly contain your query.")
 
-# ------------------------------------------------------------------------------
-# 8) QUADRANT LOGIC & PLOT
-# ------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 7) QUADRANT LOGIC & PLOT
+# -------------------------------------------------------------------
 st.subheader("Quadrant Visualization")
 
 if len(data.columns) >= 2:
@@ -184,21 +181,22 @@ if len(data.columns) >= 2:
 else:
     st.warning("Not enough columns to plot quadrants. Please upload a dataset with at least two columns.")
 
-# ------------------------------------------------------------------------------
-# 9) DOWNLOAD BUTTON
-# ------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 8) DOWNLOAD BUTTON
+# -------------------------------------------------------------------
 st.sidebar.subheader("Download Processed Data")
 csv_data = data.to_csv(index=False).encode("utf-8")
 st.sidebar.download_button("Download CSV", csv_data, "nlp_quadrant_data.csv", "text/csv")
 
-# ------------------------------------------------------------------------------
-# 10) WRAP-UP INSIGHTS
-# ------------------------------------------------------------------------------
+# -------------------------------------------------------------------
+# 9) WRAP-UP INSIGHTS
+# -------------------------------------------------------------------
 st.write("### Key Insights")
 st.markdown("""
-- **NLP-based search** finds rows related to your query by semantic meaning, not just substring matching.
+- **Pinned openai==0.28.0** so `openai.Embedding.create()` works without the APIRemovedInV1 error.
+- **NLP-based search** finds rows related to your query by semantic meaning.
 - **Quadrant analysis** helps identify high vs. low market share and access segments.
-- **Dynamic threshold controls** let you adjust boundaries and see real-time changes in quadrant classification.
+- **Adjust thresholds** to see real-time changes in quadrant classification.
 """)
 
-st.info("If you see errors, ensure your OpenAI API key is set (hard-coded or in Streamlit Secrets).")
+st.info("If you still see APIRemovedInV1, your environment might have forcibly installed openai>=1.0.0. Try a fresh environment or remove the newer package first.")
