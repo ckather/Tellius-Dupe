@@ -5,3 +5,4 @@ numpy
 plotly
 scikit-learn
 tiktoken
+openai>=0.27
