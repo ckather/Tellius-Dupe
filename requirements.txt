@@ -1,4 +1,7 @@
 streamlit
-plotly
+openai
 pandas
 numpy
+plotly
+scikit-learn
+...
