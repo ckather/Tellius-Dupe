@@ -1,7 +1,7 @@
-openai
-tiktoken
+openai==0.28.0
+streamlit
 pandas
 numpy
 plotly
 scikit-learn
-streamlit
+tiktoken
