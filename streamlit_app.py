@@ -1,124 +1,52 @@
 import streamlit as st
+import openai
 import pandas as pd
 import numpy as np
-import openai
 import plotly.express as px
-import tiktoken
-from typing import List
 from sklearn.metrics.pairwise import cosine_similarity
 
-# -----------------------------
-# 1. SETUP
-# -----------------------------
-# Replace with your actual OpenAI API key (or store in st.secrets for security)
+# -------------------------------------------------------------
+# 1. CONFIGURATION & GLOBALS
+# -------------------------------------------------------------
+# Replace with your actual OpenAI API key
 openai.api_key = "YOUR_OPENAI_API_KEY"
 
-# Streamlit config
-st.set_page_config(page_title="NLP-Based Search Demo", layout="wide")
-st.title("DrugX Market Share & Access Quadrants (NLP Search)")
+# Set Streamlit page config
+st.set_page_config(page_title="NLP Quadrant App", layout="wide")
 
-# A small utility function to get embeddings from OpenAI
-@st.cache_data
-def get_openai_embeddings(texts: List[str], model_name: str = "text-embedding-ada-002") -> np.ndarray:
-    """
-    Takes a list of text strings and returns a numpy array of shape (len(texts), embedding_dim).
-    """
-    # Note: For large lists, you should batch requests to avoid rate limits
-    response = openai.Embedding.create(input=texts, model=model_name)
-    embeddings = [r["embedding"] for r in response["data"]]
-    return np.array(embeddings)
-
-# A function to load CSV or Excel
+# -------------------------------------------------------------
+# 2. HELPER FUNCTIONS
+# -------------------------------------------------------------
 @st.cache_data
 def load_data(file):
+    """Load CSV or Excel data into a Pandas DataFrame."""
     file_name = file.name.lower()
     if file_name.endswith('.csv'):
         return pd.read_csv(file)
     elif file_name.endswith('.xlsx') or file_name.endswith('.xls'):
         return pd.read_excel(file)
     else:
-        st.error("Unsupported file type. Please upload a CSV or Excel file.")
-        return pd.DataFrame()
+        st.error("Unsupported file type. Please upload CSV or Excel.")
+        return pd.DataFrame()  # Return empty on error
 
-# -----------------------------
-# 2. DATA LOADING
-# -----------------------------
-st.sidebar.header("Upload Your Data File")
-uploaded_file = st.sidebar.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx", "xls"])
+@st.cache_data
+def get_openai_embeddings(texts, model_name="text-embedding-ada-002"):
+    """
+    Create embeddings for a list of strings using OpenAI.
+    Returns a numpy array of shape (len(texts), embedding_dim).
+    """
+    # For large lists, consider batching to avoid rate limits
+    response = openai.Embedding.create(input=texts, model=model_name)
+    embeddings = [item["embedding"] for item in response["data"]]
+    return np.array(embeddings)
 
-if uploaded_file:
-    data = load_data(uploaded_file)
-    if data.empty:
-        st.stop()
-else:
-    # Fallback to dummy data
-    np.random.seed(42)
-    x = np.random.uniform(10, 50, 100)
-    y = np.random.uniform(0.5, 3.5, 100)
-    data = pd.DataFrame({"X_Value": x, "Y_Value": y})
+def generate_quadrant_categories(df, x_col, y_col, x_threshold, y_threshold):
+    """
+    Add a 'Category' column to df based on quadrant thresholds.
+    """
+    x = df[x_col]
+    y = df[y_col]
 
-# Force data to string columns for embedding
-# (In practice, you'd combine numeric fields into textual descriptions or handle them separately.)
-string_data = data.astype(str)
-row_texts = string_data.apply(lambda row: " | ".join(row.values), axis=1).tolist()
-
-# -----------------------------
-# 3. EMBEDDINGS
-# -----------------------------
-st.sidebar.write("Generating embeddings for the dataset (one-time). Please wait...")
-dataset_embeddings = get_openai_embeddings(row_texts)
-embedding_dim = dataset_embeddings.shape[1]
-st.sidebar.success("Embeddings generated successfully!")
-
-# -----------------------------
-# 4. USER INPUT & SEMANTIC SEARCH
-# -----------------------------
-st.subheader("NLP-Based Search")
-
-user_query = st.text_input("Ask a question or type a keyword:")
-if user_query:
-    # Get embedding for the user's query
-    query_embedding = get_openai_embeddings([user_query])  # shape (1, embedding_dim)
-
-    # Compute cosine similarities between the query and each row
-    similarities = cosine_similarity(query_embedding, dataset_embeddings)  # shape (1, num_rows)
-    similarities = similarities.flatten()  # shape (num_rows,)
-
-    # Sort rows by similarity (descending)
-    top_n = 10  # number of results to show
-    top_indices = np.argsort(similarities)[::-1][:top_n]
-    
-    # Prepare results
-    search_results = data.iloc[top_indices].copy()
-    search_results["Similarity"] = similarities[top_indices]
-
-    st.markdown(f"**Top {top_n} semantic matches** for your query:")
-    st.dataframe(search_results)
-
-    # Optional: Basic AI "insights" based on similarity scores
-    avg_score = np.mean(similarities[top_indices])
-    if avg_score > 0.85:
-        st.write("**AI Insight**: The query is strongly represented in the dataset. High average similarity suggests a clear match.")
-    elif avg_score > 0.65:
-        st.write("**AI Insight**: The query partially matches multiple rows. Moderate similarity suggests the concept is somewhat present.")
-    else:
-        st.write("**AI Insight**: The query does not strongly match the dataset. Results may be loosely related.")
-
-# -----------------------------
-# 5. QUADRANT LOGIC (OPTIONAL)
-# -----------------------------
-# Example: We'll assume the first two columns are X and Y for quadrant logic
-# If you have actual variable selection, replicate that from your existing code
-if len(data.columns) >= 2:
-    x_var, y_var = data.columns[0], data.columns[1]
-    x = data[x_var]
-    y = data[y_var]
-    
-    # Basic quadrant thresholds
-    x_threshold = x.mean()
-    y_threshold = y.mean()
-
-    # Quadrant categories
     conditions = [
         (x >= x_threshold) & (y >= y_threshold),
         (x >= x_threshold) & (y < y_threshold),
@@ -131,26 +59,131 @@ if len(data.columns) >= 2:
         'High Marketshare & Low Access', 
         'Low Marketshare & Low Access'
     ]
-    data["Category"] = np.select(conditions, choices, default="Unknown")
+    df["Category"] = np.select(conditions, choices, default="Unknown")
+    return df
 
+# -------------------------------------------------------------
+# 3. SIDEBAR & DATA LOADING
+# -------------------------------------------------------------
+st.sidebar.title("Upload Your Data")
+uploaded_file = st.sidebar.file_uploader("CSV or Excel", type=["csv", "xlsx", "xls"])
+
+if uploaded_file:
+    data = load_data(uploaded_file)
+    if data.empty:
+        st.stop()  # Stop if no valid data
+else:
+    # Fallback: Generate dummy data
+    np.random.seed(42)
+    dummy_x = np.random.uniform(10, 50, 100)
+    dummy_y = np.random.uniform(0.5, 3.5, 100)
+    data = pd.DataFrame({"X_Value": dummy_x, "Y_Value": dummy_y})
+
+st.write("## DrugX Market Share & Access Quadrants (NLP Search)")
+
+# -------------------------------------------------------------
+# 4. EMBEDDINGS GENERATION
+# -------------------------------------------------------------
+st.sidebar.write("Generating embeddings... (One-time)")
+# Convert each row into a single string for embedding
+string_data = data.astype(str)
+row_texts = string_data.apply(lambda row: " | ".join(row.values), axis=1).tolist()
+
+# Create embeddings for all rows
+dataset_embeddings = get_openai_embeddings(row_texts)
+st.sidebar.success("Embeddings generated!")
+
+# -------------------------------------------------------------
+# 5. NLP-BASED SEARCH
+# -------------------------------------------------------------
+st.subheader("NLP-Based Search")
+
+user_query = st.text_input("Ask a question or type a keyword:")
+if user_query:
+    query_embedding = get_openai_embeddings([user_query])  # shape (1, embedding_dim)
+
+    # Compute cosine similarities
+    similarities = cosine_similarity(query_embedding, dataset_embeddings).flatten()
+
+    # Sort rows by similarity, descending
+    top_n = 10
+    top_indices = np.argsort(similarities)[::-1][:top_n]
+
+    # Prepare search results
+    search_results = data.iloc[top_indices].copy()
+    search_results["Similarity"] = similarities[top_indices]
+
+    st.markdown(f"**Top {top_n} matches** for your query:")
+    st.dataframe(search_results)
+
+    # Simple AI insight based on average similarity
+    avg_score = np.mean(similarities[top_indices])
+    if avg_score > 0.85:
+        st.info("AI Insight: Very strong match in the dataset. High similarity indicates a clear presence of your query.")
+    elif avg_score > 0.65:
+        st.info("AI Insight: Moderate match. The concept is somewhat present across multiple rows.")
+    else:
+        st.info("AI Insight: Weak match. The dataset doesn't strongly contain your query.")
+
+# -------------------------------------------------------------
+# 6. QUADRANT LOGIC & PLOT
+# -------------------------------------------------------------
+st.subheader("Quadrant Visualization")
+
+# Let user pick columns for X and Y if possible
+if len(data.columns) >= 2:
+    col_options = list(data.columns)
+    x_col = st.selectbox("X-axis column", col_options, index=0)
+    y_col = st.selectbox("Y-axis column", col_options, index=1)
+
+    # Calculate thresholds (use mean by default)
+    x_threshold = float(data[x_col].astype(float).mean())
+    y_threshold = float(data[y_col].astype(float).mean())
+
+    # Let user adjust thresholds
+    st.write("Adjust quadrant thresholds (optional):")
+    x_min, x_max = float(data[x_col].astype(float).min()), float(data[x_col].astype(float).max())
+    y_min, y_max = float(data[y_col].astype(float).min()), float(data[y_col].astype(float).max())
+
+    x_threshold = st.slider("X Threshold", min_value=x_min, max_value=x_max, value=x_threshold)
+    y_threshold = st.slider("Y Threshold", min_value=y_min, max_value=y_max, value=y_threshold)
+
+    # Add quadrant categories
+    data = generate_quadrant_categories(data, x_col, y_col, x_threshold, y_threshold)
+
+    # Plot
     fig = px.scatter(
-        data, 
-        x=x_var, 
-        y=y_var, 
-        color="Category", 
-        title="DrugX Market Share & Access Quadrants", 
+        data,
+        x=x_col,
+        y=y_col,
+        color="Category",
+        title="DrugX Market Share & Access Quadrants",
         hover_data=data.columns,
         template="plotly_white"
     )
-
-    # Add quadrant lines
+    fig.update_traces(marker=dict(size=8, opacity=0.85, line=dict(width=0.8, color='black')))
     fig.add_vline(x=x_threshold, line=dict(color="red", width=2, dash="dot"))
     fig.add_hline(y=y_threshold, line=dict(color="red", width=2, dash="dot"))
 
     st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Not enough columns to plot quadrants. Please upload a dataset with at least two columns.")
 
-# -----------------------------
-# 6. DOWNLOAD BUTTON
-# -----------------------------
+# -------------------------------------------------------------
+# 7. DOWNLOAD BUTTON
+# -------------------------------------------------------------
+st.sidebar.subheader("Download Processed Data")
 csv_data = data.to_csv(index=False).encode('utf-8')
-st.sidebar.download_button("Download Data as CSV", csv_data, "marketshare_data.csv", "text/csv")
+st.sidebar.download_button("Download CSV", csv_data, "nlp_quadrant_data.csv", "text/csv")
+
+# -------------------------------------------------------------
+# 8. WRAP-UP INSIGHTS
+# -------------------------------------------------------------
+st.write("### Key Insights")
+st.markdown("""
+- **NLP-based search** finds rows related to your query by semantic meaning, not just substring matching.
+- **Quadrant analysis** helps identify high vs. low market share and access segments.
+- **Dynamic threshold controls** let you adjust boundaries and see real-time changes in quadrant classification.
+""")
+
+st.info("**Tip:** If you get errors, make sure to `pip install openai streamlit pandas numpy plotly scikit-learn tiktoken` in your environment and set `openai.api_key` correctly.")
