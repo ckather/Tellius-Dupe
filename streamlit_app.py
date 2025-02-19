@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 
 # Streamlit UI
-st.title("Marketshare for Sotyktu vs Access Quadrants")
+st.title("Drug BMS Market Share & Access Quadrants")
 
 # File uploader for user-provided dataset
 st.sidebar.header("Upload Your Data File")
@@ -30,11 +30,11 @@ if uploaded_file is not None:
 else:
     # Generate dummy data if no file is uploaded
     np.random.seed(42)
-    x = np.random.uniform(10, 50, 100)  # Avg Open PA Territory (x-axis)
-    y = np.random.uniform(0.5, 3.5, 100)  # Market Share Claims for Sotyktu (y-axis)
-    data = pd.DataFrame({"Avg_Open_PA_Terr": x, "Market_Share_Claims": y})
-    x_var = "Avg_Open_PA_Terr"
-    y_var = "Market_Share_Claims"
+    x = np.random.uniform(10, 50, 100)  # Generic X-axis values
+    y = np.random.uniform(0.5, 3.5, 100)  # Generic Y-axis values
+    data = pd.DataFrame({"X_Value": x, "Y_Value": y})
+    x_var = "X_Value"
+    y_var = "Y_Value"
 
 # Define default quadrant thresholds
 x_threshold_default = x.mean()  # Dynamic default threshold based on data
@@ -50,22 +50,22 @@ def categorize_data(x, y, x_threshold, y_threshold):
     categories = []
     for i in range(len(x)):
         if x[i] >= x_threshold and y[i] >= y_threshold:
-            categories.append('Marketshare ↑ Access ↑')
+            categories.append('High Marketshare & High Access')
         elif x[i] >= x_threshold and y[i] < y_threshold:
-            categories.append('Marketshare ↓ Access ↑')
+            categories.append('Low Marketshare & High Access')
         elif x[i] < x_threshold and y[i] >= y_threshold:
-            categories.append('Marketshare ↑ Access ↓')
+            categories.append('High Marketshare & Low Access')
         else:
-            categories.append('Marketshare ↓ Access ↓')
+            categories.append('Low Marketshare & Low Access')
     return categories
 
 # Update categories based on user input
 categories = categorize_data(x, y, x_threshold, y_threshold)
 data["Category"] = categories
 
-# Create sleek interactive scatter plot
+# Create interactive scatter plot
 fig = px.scatter(data, x=x_var, y=y_var, color="Category", 
-                 title="Marketshare for Sotyktu vs Access Quadrants", 
+                 title="Drug BMS Market Share & Access Quadrants", 
                  labels={x_var: x_var, y_var: y_var},
                  hover_data=[x_var, y_var, "Category"],
                  template="plotly_white")
@@ -103,3 +103,14 @@ st.subheader("Key Insights")
 st.markdown("✅ **High market share but low access** indicates potential for improved access strategies.")
 st.markdown("✅ **Quadrant segmentation** helps pinpoint regions requiring targeted efforts for growth.")
 st.markdown("✅ **Dynamic controls** allow real-time data-driven strategic analysis.")
+
+# Searchability feature
+def search_data(query, dataframe):
+    filtered_df = dataframe[dataframe.apply(lambda row: row.astype(str).str.contains(query, case=False).any(), axis=1)]
+    return filtered_df
+
+search_term = st.sidebar.text_input("Search Dataset")
+if search_term:
+    search_results = search_data(search_term, data)
+    st.write("Search Results:")
+    st.dataframe(search_results)
