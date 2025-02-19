@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 
 # Streamlit UI
-st.title("Drug BMS Market Share & Access Quadrants")
+st.markdown("## DrugX Market Share & Access Quadrants")
 
 # File uploader for user-provided dataset
 st.sidebar.header("Upload Your Data File")
@@ -40,6 +40,26 @@ else:
 x_threshold_default = x.mean()  # Dynamic default threshold based on data
 y_threshold_default = y.mean()
 
+# Searchability feature
+def search_data(query, dataframe):
+    filtered_df = dataframe[dataframe.apply(lambda row: row.astype(str).str.contains(query, case=False).any(), axis=1)]
+    return filtered_df
+
+search_term = st.text_input("Search Dataset")
+if search_term:
+    search_results = search_data(search_term, data)
+    st.write("### Search Results:")
+    st.dataframe(search_results)
+    if not search_results.empty:
+        st.write("### AI-Generated Insights:")
+        st.write(f"🔍 The search term '{search_term}' appears in the dataset. Here are some potential insights:")
+        if len(search_results) > 10:
+            st.write("📊 The term appears frequently, indicating a strong trend in this data segment.")
+        elif len(search_results) > 5:
+            st.write("📈 Moderate occurrence, possibly indicating a growing trend.")
+        else:
+            st.write("🔎 The term appears infrequently, which could indicate an emerging opportunity or niche area.")
+
 # Sidebar for user input
 st.sidebar.header("Adjust Quadrant Thresholds")
 x_threshold = st.sidebar.slider("X-axis Threshold", min_value=float(min(x)), max_value=float(max(x)), value=float(x_threshold_default))
@@ -65,7 +85,7 @@ data["Category"] = categories
 
 # Create interactive scatter plot
 fig = px.scatter(data, x=x_var, y=y_var, color="Category", 
-                 title="Drug BMS Market Share & Access Quadrants", 
+                 title="DrugX Market Share & Access Quadrants", 
                  labels={x_var: x_var, y_var: y_var},
                  hover_data=[x_var, y_var, "Category"],
                  template="plotly_white")
@@ -103,14 +123,3 @@ st.subheader("Key Insights")
 st.markdown("✅ **High market share but low access** indicates potential for improved access strategies.")
 st.markdown("✅ **Quadrant segmentation** helps pinpoint regions requiring targeted efforts for growth.")
 st.markdown("✅ **Dynamic controls** allow real-time data-driven strategic analysis.")
-
-# Searchability feature
-def search_data(query, dataframe):
-    filtered_df = dataframe[dataframe.apply(lambda row: row.astype(str).str.contains(query, case=False).any(), axis=1)]
-    return filtered_df
-
-search_term = st.sidebar.text_input("Search Dataset")
-if search_term:
-    search_results = search_data(search_term, data)
-    st.write("Search Results:")
-    st.dataframe(search_results)
